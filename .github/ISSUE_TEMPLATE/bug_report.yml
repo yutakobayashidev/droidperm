@@ -1,0 +1,65 @@
+name: Bug report
+description: Report a reproducible droidperm problem
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove package inventories, device serials, account names, and other sensitive data before submitting.
+        Report security vulnerabilities privately as described in SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: droidperm version
+      placeholder: droidperm version
+    validations:
+      required: true
+  - type: input
+    id: platform_tools
+    attributes:
+      label: Android Platform Tools version
+      placeholder: adb version
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Android version and device
+      description: Include the Android/API version and OEM. Do not include a serial.
+      placeholder: Android 15 / API 35, Pixel 8
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Run ...
+        2. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Sanitized output
+      description: Include relevant command output and policy excerpts after removing private data.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true
+        - label: I removed device serials and other sensitive data.
+          required: true

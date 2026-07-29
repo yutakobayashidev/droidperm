@@ -1,0 +1,21 @@
+version: 1
+
+packages:
+  com.instagram.android:
+    permissions:
+      android.permission.CAMERA: deny
+      android.permission.POST_NOTIFICATIONS: deny
+      android.permission.RECORD_AUDIO: deny
+    appops:
+      CAMERA: ignore
+      READ_CLIPBOARD: ignore
+      RECORD_AUDIO: ignore
+      WAKE_LOCK: allow
+      WRITE_CLIPBOARD: ignore
+
+  org.telegram.messenger:
+    permissions:
+      android.permission.CAMERA: allow
+      android.permission.RECORD_AUDIO: allow
+    appops:
+      READ_CLIPBOARD: foreground

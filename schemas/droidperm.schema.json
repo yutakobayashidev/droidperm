@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yutakobayashidev/droidperm/raw/main/schemas/droidperm.schema.json",
+  "title": "droidperm policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "packages": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "\\S"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/package"
+      }
+    }
+  },
+  "$defs": {
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "permissions": {
+          "$ref": "#/$defs/permissions"
+        },
+        "appops": {
+          "$ref": "#/$defs/appops"
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "permissions"
+          ]
+        },
+        {
+          "required": [
+            "appops"
+          ]
+        }
+      ]
+    },
+    "permissions": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "\\S"
+      },
+      "additionalProperties": {
+        "enum": [
+          "allow",
+          "deny"
+        ]
+      }
+    },
+    "appops": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "\\S"
+      },
+      "additionalProperties": {
+        "enum": [
+          "allow",
+          "ignore",
+          "deny",
+          "default",
+          "foreground"
+        ]
+      }
+    }
+  }
+}
