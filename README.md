@@ -36,6 +36,18 @@ permission changes; see [compatibility notes](docs/compatibility.md).
 
 ## Install
 
+With Nix:
+
+```sh
+nix run github:yutakobayashidev/droidperm
+```
+
+To install it into your profile instead:
+
+```sh
+nix profile install github:yutakobayashidev/droidperm
+```
+
 With Go 1.25 or newer:
 
 ```sh
