@@ -111,37 +111,145 @@ droidperm apply
 Only entries present in the YAML are managed. Removing an entry means “stop
 managing it”; it does not reset that value on the device.
 
-### Bulk AppOps restriction
+### Workflow: capture all third-party apps, then restrict AppOps
 
-The included Nushell script discovers all third-party packages and prints their
-currently allowed AppOps:
+This repository includes a small Nushell script for a deliberately broad
+workflow:
+
+1. Capture the current state of every third-party package.
+2. Preview the AppOps that are currently `allow`.
+3. Reset each package's AppOps and change most allowed operations to `ignore`.
+4. Capture the resulting restrictive policy.
+
+The script changes AppOps only. It does not grant or revoke Android runtime
+permissions. It calls `appops reset`, which removes existing AppOps overrides
+before applying the restrictions, so this can disrupt applications even when
+the final list looks reasonable.
+
+> [!WARNING]
+> Test this on a recoverable device first. A capture is a reviewable snapshot
+> of observable state, not a complete Android backup, and observed `allow`
+> entries can be usage-derived.
+
+The workflow uses the repository checkout because the helper remains separate
+from the main CLI. Enter the development shell, start Nushell, and confirm that
+ADB can see exactly one authorized device:
 
 ```sh
-nix develop -c nu scripts/restrict-third-party-appops.nu
+nix develop
+nu
 ```
 
-This is a dry run and does not change the device. Pass `--apply` to reset each
-package's AppOps and change allowed entries to `ignore`, except for the small
-allowlist defined in the script:
-
-```sh
-nix develop -c nu scripts/restrict-third-party-appops.nu --apply
+```nu
+adb devices -l
 ```
 
-This is a broad device change, so review the dry run first. Capture the result
-separately with `droidperm capture`; the script intentionally contains no
-policy or output-file orchestration. Packages that should not be touched can be
-passed as a comma-separated `--exclude` value. From the development shell:
+The remaining commands in this section run inside that Nushell session. This
+workflow assumes Android user `0`; the helper does not expose the CLI's
+`--user` option.
+
+First, collect a deterministic list of third-party packages:
 
 ```nu
 let packages = (
   adb shell pm list packages -3
   | lines
-  | str replace 'package:' ''
-  | str join ','
+  | parse 'package:{package}'
+  | get package
+  | sort
 )
-droidperm capture --package $packages --output droidperm.yaml
+
+$packages | length
 ```
+
+Choose packages that must be excluded from the reset, then derive the package
+list that will be managed by the resulting policy:
+
+```nu
+let excluded = [
+  # 'com.example.one'
+  # 'com.example.two'
+]
+let excluded_arg = ($excluded | str join ',')
+let managed_packages = $packages | where {|package| $package not-in $excluded }
+```
+
+Capture the starting state. `--all-appops` includes observed `allow` and
+`default` entries so the before-policy is useful when reviewing what changed:
+
+```nu
+droidperm capture --package ($packages | str join ',') --all-appops --output droidperm.before.yaml
+droidperm validate --file droidperm.before.yaml
+```
+
+Run the helper without `--apply` to list the currently allowed AppOps without
+changing the device:
+
+```nu
+nu scripts/restrict-third-party-appops.nu --exclude $excluded_arg
+```
+
+To keep a reviewable report instead of printing it to the terminal:
+
+```nu
+nu scripts/restrict-third-party-appops.nu --exclude $excluded_arg
+| save --force appops-dry-run.txt
+```
+
+This dry run describes the pre-reset state, not an exact change plan. During
+`--apply`, the script resets a package before reading its allowed AppOps, so
+the set of operations can differ after reset. The script keeps
+`AUDIO_MEDIA_VOLUME`, `START_FOREGROUND`, `TAKE_AUDIO_FOCUS`, `TOAST_WINDOW`,
+`WAKE_LOCK`, `WRITE_CLIPBOARD`, and `READ_MEDIA_IMAGES` allowed; it changes
+other allowed operations to `ignore`.
+
+After reviewing the current state and allowlist, apply the reset and
+restrictions:
+
+```nu
+nu scripts/restrict-third-party-appops.nu --apply --exclude $excluded_arg
+```
+
+Capture the resulting state with `--all-appops` so it has the same scope as the
+starting capture, then compare them:
+
+```nu
+droidperm capture --package ($packages | str join ',') --all-appops --output droidperm.after.yaml
+droidperm validate --file droidperm.after.yaml
+git diff --no-index -- droidperm.before.yaml droidperm.after.yaml
+```
+
+`git diff --no-index` exits `1` when it finds differences; that is expected.
+
+Finally, create the policy you intend to manage without `--all-appops`.
+This keeps runtime-permission state and restrictive AppOps while intentionally
+leaving observed allowed/default AppOps unmanaged. It uses `managed_packages`
+so excluded packages do not later become managed through this policy:
+
+```nu
+droidperm capture --package ($managed_packages | str join ',') --output droidperm.yaml
+droidperm validate --file droidperm.yaml
+droidperm check --file droidperm.yaml
+```
+
+Checking hundreds of packages can take several minutes because every value is
+read back through ADB. Capture refuses to replace an existing file; on a repeat
+run, choose new filenames or pass `--force` only after checking the target.
+
+If an application breaks, inspect the starting policy before attempting to
+restore its observed values:
+
+```nu
+droidperm plan --file droidperm.before.yaml
+droidperm apply --file droidperm.before.yaml
+```
+
+Applying the before-policy is not a guaranteed full rollback: Android may have
+changed usage-derived state, and values that were not observable were never
+captured. All generated policies reveal the device's package inventory, so
+review them before deciding whether to commit any of them. Runtime permissions
+and some AppOps can also affect another package with the same shared UID; see
+the [compatibility notes](docs/compatibility.md).
 
 ## Commands
 
