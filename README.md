@@ -111,6 +111,38 @@ droidperm apply
 Only entries present in the YAML are managed. Removing an entry means “stop
 managing it”; it does not reset that value on the device.
 
+### Bulk AppOps restriction
+
+The included Nushell script discovers all third-party packages and prints their
+currently allowed AppOps:
+
+```sh
+nix develop -c nu scripts/restrict-third-party-appops.nu
+```
+
+This is a dry run and does not change the device. Pass `--apply` to reset each
+package's AppOps and change allowed entries to `ignore`, except for the small
+allowlist defined in the script:
+
+```sh
+nix develop -c nu scripts/restrict-third-party-appops.nu --apply
+```
+
+This is a broad device change, so review the dry run first. Capture the result
+separately with `droidperm capture`; the script intentionally contains no
+policy or output-file orchestration. Packages that should not be touched can be
+passed as a comma-separated `--exclude` value. From the development shell:
+
+```nu
+let packages = (
+  adb shell pm list packages -3
+  | lines
+  | str replace 'package:' ''
+  | str join ','
+)
+droidperm capture --package $packages --output droidperm.yaml
+```
+
 ## Commands
 
 ```text

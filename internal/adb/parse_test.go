@@ -23,9 +23,9 @@ func TestParsePackageState(t *testing.T) {
       runtime permissions:
         android.permission.CAMERA: granted=true
 `
-	state, sharedUID, found := parsePackageState("com.example", 0, output)
-	if !found || sharedUID {
-		t.Fatalf("found = %v, sharedUID = %v", found, sharedUID)
+	state, found := parsePackageState("com.example", 0, output)
+	if !found {
+		t.Fatal("package not found")
 	}
 	want := map[string]bool{
 		"android.permission.CAMERA":       false,
@@ -36,17 +36,25 @@ func TestParsePackageState(t *testing.T) {
 	}
 }
 
-func TestParsePackageStateDetectsSharedUID(t *testing.T) {
+func TestParsePackageStateWithSharedUID(t *testing.T) {
 	output := `Packages:
   Package [com.example] (abc123):
     userId=10123
     sharedUserId=com.example.shared
     requested permissions:
       android.permission.CAMERA
+Shared users:
+  SharedUser [com.example.shared] (def456):
+    User 0:
+      runtime permissions:
+        android.permission.CAMERA: granted=true, flags=[ USER_SET]
 `
-	_, sharedUID, found := parsePackageState("com.example", 0, output)
-	if !found || !sharedUID {
-		t.Fatalf("found = %v, sharedUID = %v", found, sharedUID)
+	state, found := parsePackageState("com.example", 0, output)
+	if !found {
+		t.Fatal("package not found")
+	}
+	if !state.Permissions["android.permission.CAMERA"] {
+		t.Fatalf("permissions = %#v", state.Permissions)
 	}
 }
 
@@ -62,11 +70,11 @@ func TestParsePackageStateSeparatesUsers(t *testing.T) {
       runtime permissions:
         android.permission.CAMERA: granted=true, flags=[ USER_SET]
 `
-	user0, _, found := parsePackageState("com.example", 0, output)
+	user0, found := parsePackageState("com.example", 0, output)
 	if !found || user0.Permissions["android.permission.CAMERA"] {
 		t.Fatalf("user 0 state = %#v, found = %v", user0, found)
 	}
-	user10, _, found := parsePackageState("com.example", 10, output)
+	user10, found := parsePackageState("com.example", 10, output)
 	if !found || !user10.Permissions["android.permission.CAMERA"] {
 		t.Fatalf("user 10 state = %#v, found = %v", user10, found)
 	}
@@ -80,9 +88,9 @@ func TestParseScopedPackageWithoutHeader(t *testing.T) {
     runtime permissions:
       android.permission.CAMERA: granted=true, flags=[ USER_SET]
 `
-	state, sharedUID, found := parsePackageState("com.example", 0, output)
-	if !found || sharedUID {
-		t.Fatalf("found = %v, sharedUID = %v", found, sharedUID)
+	state, found := parsePackageState("com.example", 0, output)
+	if !found {
+		t.Fatal("package not found")
 	}
 	if !state.Permissions["android.permission.CAMERA"] {
 		t.Fatalf("scoped permissions = %#v", state.Permissions)

@@ -28,13 +28,13 @@ func parseDevices(output string) []string {
 	return devices
 }
 
-func parsePackageState(pkg string, user int, output string) (PackageState, bool, bool) {
+func parsePackageState(pkg string, user int, output string) (PackageState, bool) {
 	state := PackageState{
 		Package:     pkg,
 		Permissions: make(map[string]bool),
 	}
 	if packageMissing(output) {
-		return state, false, false
+		return state, false
 	}
 
 	hasPackageHeader := packageHeaderPattern.MatchString(output)
@@ -43,7 +43,6 @@ func parsePackageState(pkg string, user int, output string) (PackageState, bool,
 	inRuntimePermissions := false
 	runtimeIndent := 0
 	currentUser := -1
-	sharedUID := false
 
 	for _, line := range strings.Split(output, "\n") {
 		if match := packageHeaderPattern.FindStringSubmatch(line); match != nil {
@@ -66,14 +65,6 @@ func parsePackageState(pkg string, user int, output string) (PackageState, bool,
 			inRuntimePermissions = false
 			continue
 		}
-		if strings.HasPrefix(trimmed, "sharedUserId=") ||
-			strings.HasPrefix(trimmed, "sharedUser=") {
-			value := strings.TrimSpace(strings.SplitN(trimmed, "=", 2)[1])
-			if value != "" && value != "null" {
-				sharedUID = true
-			}
-		}
-
 		if strings.HasSuffix(trimmed, "runtime permissions:") {
 			// A runtime section without a User header is a legacy user-0
 			// representation. Modern dumpsys output identifies each user.
@@ -96,7 +87,7 @@ func parsePackageState(pkg string, user int, output string) (PackageState, bool,
 		}
 	}
 
-	return state, sharedUID, found
+	return state, found
 }
 
 func parseAppOps(output string) map[string]string {

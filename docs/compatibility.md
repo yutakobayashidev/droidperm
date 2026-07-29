@@ -17,9 +17,11 @@ the Android Platform Tools `adb` installed on the host.
 - OEM firmware can remove, rename, restrict, or add AppOps.
 - Android can refuse changes to fixed, signature, privileged, policy-managed,
   or otherwise non-runtime permissions.
-- Some AppOps apply to a UID rather than independently to one package. Shared
-  UIDs can therefore affect more than the named package. droidperm rejects
-  ambiguous cases instead of silently broadening the change.
+- Runtime permissions and some AppOps apply to a UID rather than independently
+  to one package. Shared UIDs can therefore make a change to one named package
+  affect other packages with the same UID. Review `plan` carefully when
+  managing such packages and avoid conflicting desired values within a
+  shared-UID group.
 - AppOps output is not a stable serialization format and can contain
   usage-history fields. `capture` produces a policy draft, not a lossless
   backup.

@@ -94,6 +94,10 @@
               # https://github.com/golangci/golangci-lint
               golangci-lint
 
+              # scripts/restrict-third-party-appops.nu
+              nushell
+
+              self.packages.${system}.droidperm
               self.formatter.${system}
             ];
           };

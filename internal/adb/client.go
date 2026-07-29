@@ -20,7 +20,6 @@ var (
 	ErrNoDevice          = errors.New("no usable Android device found")
 	ErrMultipleDevices   = errors.New("multiple Android devices found")
 	ErrPackageNotFound   = errors.New("package not found")
-	ErrSharedUID         = errors.New("packages using a shared UID are not supported")
 	ErrUnsupportedDevice = errors.New("unsupported Android version")
 	ErrInvalidArgument   = errors.New("invalid adb argument")
 	ErrUnknownAppOp      = errors.New("unknown AppOp")
@@ -161,12 +160,9 @@ func (c *Client) PackageState(ctx context.Context, pkg string) (PackageState, er
 	if err != nil {
 		return PackageState{}, fmt.Errorf("inspect package %q: %w", pkg, err)
 	}
-	state, sharedUID, found := parsePackageState(pkg, c.user, output)
+	state, found := parsePackageState(pkg, c.user, output)
 	if !found {
 		return PackageState{}, fmt.Errorf("%w: %s", ErrPackageNotFound, pkg)
-	}
-	if sharedUID {
-		return PackageState{}, fmt.Errorf("%w: %s", ErrSharedUID, pkg)
 	}
 	return state, nil
 }

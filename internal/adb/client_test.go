@@ -151,6 +151,35 @@ func TestSetCommandsKeepValuesAsSeparateArguments(t *testing.T) {
 	}
 }
 
+func TestPackageStateAllowsSharedUID(t *testing.T) {
+	runner := &fakeRunner{responses: []fakeResponse{{output: `Packages:
+  Package [com.example] (abc123):
+    sharedUser=SharedUserSetting{def456 com.example.shared/10123}
+    requested permissions:
+      android.permission.CAMERA
+Shared users:
+  SharedUser [com.example.shared] (def456):
+    User 0:
+      runtime permissions:
+        android.permission.CAMERA: granted=true, flags=[ USER_SET]
+`}}}
+	client := NewWithRunner("adb", "serial", 0, runner)
+
+	state, err := client.PackageState(context.Background(), "com.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !state.Permissions["android.permission.CAMERA"] {
+		t.Fatalf("PackageState() = %#v", state)
+	}
+	wantCall := []string{
+		"adb", "-s", "serial", "shell", "dumpsys", "package", "com.example",
+	}
+	if !reflect.DeepEqual(runner.calls[0], wantCall) {
+		t.Fatalf("call = %#v, want %#v", runner.calls[0], wantCall)
+	}
+}
+
 func TestSetCommandsRejectRemoteShellMetacharacters(t *testing.T) {
 	runner := &fakeRunner{}
 	client := NewWithRunner("adb", "serial", 0, runner)
