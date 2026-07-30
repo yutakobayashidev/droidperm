@@ -92,6 +92,29 @@ func TestResolveDevicePrecedence(t *testing.T) {
 	}
 }
 
+func TestResolveDeviceExplainsUnavailableDevices(t *testing.T) {
+	t.Setenv("ANDROID_SERIAL", "")
+	tests := []struct {
+		state string
+		want  string
+	}{
+		{state: "unauthorized", want: "approve the USB debugging prompt"},
+		{state: "offline", want: "reconnect it"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.state, func(t *testing.T) {
+			runner := &fakeRunner{responses: []fakeResponse{{
+				output: "List of devices attached\nphone " + tt.state + "\n",
+			}}}
+			client := NewWithRunner("adb", "", 0, runner)
+			_, err := client.ResolveDevice(context.Background())
+			if !errors.Is(err, ErrNoDevice) || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("ResolveDevice() error = %v", err)
+			}
+		})
+	}
+}
+
 func TestProbe(t *testing.T) {
 	runner := &fakeRunner{responses: []fakeResponse{
 		{output: "35\n"},

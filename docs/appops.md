@@ -30,9 +30,14 @@ accepted by `cmd appops` does not guarantee the application behaves safely.
 6. Launch and exercise the affected application.
 
 `droidperm` never resets all AppOps and never changes an unmentioned operation.
-It applies runtime permission changes first because Android may update related
-AppOps, then applies explicitly declared AppOps and verifies them.
+Preflight is fail-closed and performs no writes if any selected policy entry
+cannot be inspected. It applies every runtime permission change first, reads
+the selected packages' AppOps again to observe permission side effects, then
+applies all explicitly declared AppOps that now differ.
 
 Android offers no transaction spanning these commands. If an operation fails,
-`droidperm` stops and reports the partial application; v1 does not attempt an
-automatic rollback.
+`droidperm` stops and reports the verified actions, failed action, write count,
+and pending actions. It does not attempt an automatic rollback; rerunning the
+same command resumes from the device's current state. After all writes, it
+reads every selected package again and verifies the complete selected policy,
+so shared-UID or other cross-action side effects cannot be reported as success.

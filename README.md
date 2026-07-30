@@ -111,6 +111,21 @@ droidperm apply
 Only entries present in the YAML are managed. Removing an entry means “stop
 managing it”; it does not reset that value on the device.
 
+To inspect or repair only part of a large policy, select packages explicitly:
+
+```sh
+droidperm apply \
+  --package com.onepassword.android \
+  --package jp.co.smbc.direct \
+  --yes
+```
+
+`--package` is repeatable and accepts comma-separated values. The complete YAML
+is still parsed and statically validated, but device inspection and writes are
+limited to the selected packages. A package that is not in the policy is a CLI
+input error and no write is attempted. Without selectors, the complete policy
+is inspected strictly.
+
 ### Workflow: capture all third-party apps, then restrict AppOps
 
 This repository includes a small Nushell script for a deliberately broad
@@ -232,9 +247,11 @@ droidperm validate --file droidperm.yaml
 droidperm check --file droidperm.yaml
 ```
 
-Checking hundreds of packages can take several minutes because every value is
-read back through ADB. Capture refuses to replace an existing file; on a repeat
-run, choose new filenames or pass `--force` only after checking the target.
+Planning reads runtime permissions and AppOps once per package and validates
+each distinct AppOp name once. Its ADB read count therefore grows with package
+count plus distinct AppOp count, rather than with every managed item. Capture
+refuses to replace an existing file; on a repeat run, choose new filenames or
+pass `--force` only after checking the target.
 
 If an application breaks, inspect the starting policy before attempting to
 restore its observed values:
@@ -256,9 +273,9 @@ the [compatibility notes](docs/compatibility.md).
 ```text
 droidperm capture  --package PACKAGE [--package PACKAGE...] [-o FILE]
 droidperm validate [-f FILE]
-droidperm plan     [-f FILE] [-s SERIAL] [--user USER] [--json]
-droidperm check    [-f FILE] [-s SERIAL] [--user USER] [--json]
-droidperm apply    [-f FILE] [-s SERIAL] [--user USER] [--yes] [--json]
+droidperm plan     [-f FILE] [--package PACKAGE...] [-s SERIAL] [--user USER] [--json]
+droidperm check    [-f FILE] [--package PACKAGE...] [-s SERIAL] [--user USER] [--json]
+droidperm apply    [-f FILE] [--package PACKAGE...] [-s SERIAL] [--user USER] [--yes] [--json]
 ```
 
 - `capture` reads selected installed packages and emits stable, sorted YAML.
@@ -267,14 +284,34 @@ droidperm apply    [-f FILE] [-s SERIAL] [--user USER] [--yes] [--json]
 - `plan` prints the difference between the device and the desired state without
   changing anything.
 - `check` is the CI-friendly drift check. It exits `0` when converged and `3`
-  when drift exists.
+  when drift exists. With `--package`, it judges drift only in the selected
+  scope.
 - `apply` performs preflight checks, asks for confirmation on a terminal,
   applies runtime permissions followed by AppOps, and verifies the result.
   Non-interactive use requires `--yes`.
 
 The default file is `droidperm.yaml`. Select a device with `--serial` or
 `ANDROID_SERIAL`; if exactly one device is connected, it is selected
-automatically. User `0` is the default.
+automatically. User `0` is the default. If ADB reports an unauthorized or
+offline device, the error explains how to approve USB debugging or reconnect
+it.
+
+Preflight is fail-closed: every selected package and AppOp must be inspectable,
+and every configured runtime permission must still be requested by the
+installed app, before any write begins. A stale permission error tells you to
+remove that entry or recapture the package. The start count is written to
+stderr immediately; `--verbose` also reports package-by-package progress.
+Progress never contaminates JSON stdout.
+
+Applying is deliberately restartable rather than transactional. All runtime
+permission writes happen first. AppOps are then read again so permission side
+effects are included, explicitly managed AppOps are applied, and the complete
+selected policy is read back once more to prove convergence. Android provides
+no transaction across these operations, so there is no automatic rollback.
+On a partial failure, human output reports the verified count, failed action,
+pending count, and write count. `--json` emits one JSON document on success,
+preflight failure, and partial apply failure; preflight failures report
+`writes: 0`.
 
 Exit codes are `0` for success, `1` for ADB/device/application failure, `2` for
 invalid CLI input or policy, `3` for drift, and `130` for interruption. Machine

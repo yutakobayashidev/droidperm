@@ -40,6 +40,12 @@ func (execRunner) Run(ctx context.Context, path string, args ...string) ([]byte,
 		if detail == "" {
 			return nil, fmt.Errorf("run adb: %w", err)
 		}
+		lower := strings.ToLower(detail)
+		if strings.Contains(lower, "unauthorized") {
+			detail += "; unlock the device and approve the USB debugging prompt"
+		} else if strings.Contains(lower, "offline") {
+			detail += "; reconnect the device and restart ADB if needed"
+		}
 		return nil, fmt.Errorf("run adb: %w: %s", err, detail)
 	}
 	return output, nil
@@ -103,13 +109,35 @@ func (c *Client) ResolveDevice(ctx context.Context) (string, error) {
 	devices := parseDevices(string(output))
 	switch len(devices) {
 	case 0:
-		return "", ErrNoDevice
+		return "", unavailableDeviceError(string(output))
 	case 1:
 		c.serial = devices[0]
 		return devices[0], nil
 	default:
 		return "", fmt.Errorf("%w: %s", ErrMultipleDevices, strings.Join(devices, ", "))
 	}
+}
+
+func unavailableDeviceError(output string) error {
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || fields[0] == "List" {
+			continue
+		}
+		switch fields[1] {
+		case "unauthorized":
+			return fmt.Errorf(
+				"%w: device %s is unauthorized; unlock it and approve the USB debugging prompt",
+				ErrNoDevice, fields[0],
+			)
+		case "offline":
+			return fmt.Errorf(
+				"%w: device %s is offline; reconnect it and restart ADB if needed",
+				ErrNoDevice, fields[0],
+			)
+		}
+	}
+	return ErrNoDevice
 }
 
 func (c *Client) Probe(ctx context.Context) (DeviceInfo, error) {

@@ -27,37 +27,52 @@ func Open(ctx context.Context, adbPath, serial string, user int) (engine.Device,
 	return &androidDevice{client: client}, info, nil
 }
 
-func (d *androidDevice) Permission(
+func (d *androidDevice) InspectPackage(
 	ctx context.Context,
-	packageName, permission string,
-) (policy.PermissionMode, error) {
+	packageName string,
+) (engine.Snapshot, error) {
 	state, err := d.client.PackageState(ctx, packageName)
 	if err != nil {
-		return "", err
+		return engine.Snapshot{}, err
 	}
-	granted, ok := state.Permissions[permission]
-	if !ok {
-		return "", fmt.Errorf("%q is not a requested runtime permission", permission)
+	rawAppOps, err := d.client.AppOps(ctx, packageName)
+	if err != nil {
+		return engine.Snapshot{}, err
 	}
-	if granted {
-		return policy.PermissionAllow, nil
+
+	permissions := make(map[string]policy.PermissionMode, len(state.Permissions))
+	for name, granted := range state.Permissions {
+		mode := policy.PermissionDeny
+		if granted {
+			mode = policy.PermissionAllow
+		}
+		permissions[name] = mode
 	}
-	return policy.PermissionDeny, nil
+
+	appOps := make(map[string]policy.AppOpMode, len(rawAppOps))
+	for name, rawMode := range rawAppOps {
+		mode := policy.AppOpMode(rawMode)
+		if !policy.ValidAppOpMode(mode) {
+			return engine.Snapshot{}, fmt.Errorf("AppOp %q returned unsupported mode %q", name, rawMode)
+		}
+		appOps[name] = mode
+	}
+
+	return engine.Snapshot{Permissions: permissions, AppOps: appOps}, nil
 }
 
-func (d *androidDevice) AppOp(
+func (d *androidDevice) ValidateAppOp(
 	ctx context.Context,
 	packageName, appOp string,
-) (policy.AppOpMode, error) {
+) error {
 	mode, err := d.client.AppOp(ctx, packageName, appOp)
 	if err != nil {
-		return "", err
+		return err
 	}
-	parsed := policy.AppOpMode(mode)
-	if !policy.ValidAppOpMode(parsed) {
-		return "", fmt.Errorf("AppOp %q returned unsupported mode %q", appOp, mode)
+	if parsed := policy.AppOpMode(mode); !policy.ValidAppOpMode(parsed) {
+		return fmt.Errorf("AppOp %q returned unsupported mode %q", appOp, mode)
 	}
-	return parsed, nil
+	return nil
 }
 
 func (d *androidDevice) SetPermission(
@@ -80,41 +95,4 @@ func (d *androidDevice) SetAppOp(
 		return fmt.Errorf("invalid AppOp mode %q", mode)
 	}
 	return d.client.SetAppOp(ctx, packageName, appOp, string(mode))
-}
-
-func (d *androidDevice) Capture(
-	ctx context.Context,
-	packageName string,
-	allAppOps bool,
-) (engine.Snapshot, error) {
-	state, err := d.client.PackageState(ctx, packageName)
-	if err != nil {
-		return engine.Snapshot{}, err
-	}
-	rawAppOps, err := d.client.AppOps(ctx, packageName)
-	if err != nil {
-		return engine.Snapshot{}, err
-	}
-
-	permissions := make(map[string]policy.PermissionMode, len(state.Permissions))
-	for name, granted := range state.Permissions {
-		mode := policy.PermissionDeny
-		if granted {
-			mode = policy.PermissionAllow
-		}
-		permissions[name] = mode
-	}
-
-	appOps := make(map[string]policy.AppOpMode)
-	for name, rawMode := range rawAppOps {
-		mode := policy.AppOpMode(rawMode)
-		if !policy.ValidAppOpMode(mode) {
-			return engine.Snapshot{}, fmt.Errorf("AppOp %q returned unsupported mode %q", name, rawMode)
-		}
-		if allAppOps || mode == policy.AppOpIgnore || mode == policy.AppOpDeny || mode == policy.AppOpForeground {
-			appOps[name] = mode
-		}
-	}
-
-	return engine.Snapshot{Permissions: permissions, AppOps: appOps}, nil
 }
