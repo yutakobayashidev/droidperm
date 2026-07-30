@@ -12,6 +12,10 @@ free and add no cyclomatic complexity.
   never be changed.
 - Runtime permissions are applied before AppOps and every applied value must be
   verified by reading it back.
+- Plan inspection is package-snapshot based; its read count must scale with
+  packages plus distinct AppOps, not managed item count.
+- Apply must re-read AppOps after all runtime permission writes, then finally
+  verify the complete selected policy to catch cross-action side effects.
 - `capture` generates a reviewable policy starting point. It is not a complete
   device backup.
 - Keep output deterministic and machine output stable. Never interpolate

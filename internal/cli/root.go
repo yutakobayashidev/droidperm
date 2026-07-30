@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -123,23 +124,28 @@ func newValidateCommand(opts *options) *cobra.Command {
 }
 
 func newPlanCommand(opts *options, check bool) *cobra.Command {
+	var packages []string
 	name := "plan"
 	short := "Show the changes required by a policy"
 	if check {
 		name = "check"
 		short = "Exit with code 3 when a device has drifted"
 	}
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   name,
 		Short: short,
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			policyFile, dev, err := opts.loadPolicyAndDevice(cmd.Context())
+			policyFile, dev, err := opts.loadPolicyAndDevice(cmd.Context(), packages)
 			if err != nil {
 				return err
 			}
-			plan, err := engine.BuildPlan(cmd.Context(), dev, *policyFile)
+			opts.reportPlanStart(len(policyFile.Packages))
+			plan, err := engine.BuildPlan(cmd.Context(), dev, *policyFile, opts.progress())
 			if err != nil {
+				if outputErr := writePlan(opts.stdout, plan, opts.json); outputErr != nil {
+					return outputErr
+				}
 				return err
 			}
 			if err := writePlan(opts.stdout, plan, opts.json); err != nil {
@@ -151,21 +157,33 @@ func newPlanCommand(opts *options, check bool) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringSliceVar(&packages, "package", nil, "package to inspect (repeatable or comma-separated)")
+	return cmd
 }
 
 func newApplyCommand(opts *options) *cobra.Command {
-	var yes bool
+	var (
+		yes      bool
+		packages []string
+	)
 	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Apply and verify the changes required by a policy",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			policyFile, dev, err := opts.loadPolicyAndDevice(cmd.Context())
+			if opts.json && !yes {
+				return exitError(2, errors.New("--json apply requires --yes"))
+			}
+			policyFile, dev, err := opts.loadPolicyAndDevice(cmd.Context(), packages)
 			if err != nil {
 				return err
 			}
-			plan, err := engine.BuildPlan(cmd.Context(), dev, *policyFile)
+			opts.reportPlanStart(len(policyFile.Packages))
+			plan, err := engine.BuildPlan(cmd.Context(), dev, *policyFile, opts.progress())
 			if err != nil {
+				if outputErr := writeApplied(opts.stdout, plan, opts.json); outputErr != nil {
+					return outputErr
+				}
 				return err
 			}
 			if !opts.json {
@@ -179,9 +197,6 @@ func newApplyCommand(opts *options) *cobra.Command {
 				}
 				return nil
 			}
-			if opts.json && !yes {
-				return errors.New("--json apply requires --yes")
-			}
 			if !yes {
 				ok, err := confirm(opts.stdin, opts.stdout, plan.Changes)
 				if err != nil {
@@ -193,12 +208,16 @@ func newApplyCommand(opts *options) *cobra.Command {
 			}
 			applied, err := engine.Apply(cmd.Context(), dev, plan)
 			if err != nil {
+				if outputErr := writeApplied(opts.stdout, applied, opts.json); outputErr != nil {
+					return outputErr
+				}
 				return err
 			}
 			return writeApplied(opts.stdout, applied, opts.json)
 		},
 	}
 	cmd.Flags().BoolVar(&yes, "yes", false, "apply without an interactive confirmation")
+	cmd.Flags().StringSliceVar(&packages, "package", nil, "package to apply (repeatable or comma-separated)")
 	return cmd
 }
 
@@ -268,13 +287,60 @@ func newCompletionCommand(root *cobra.Command) *cobra.Command {
 	}
 }
 
-func (opts *options) loadPolicyAndDevice(ctx context.Context) (*policy.File, engine.Device, error) {
+func (opts *options) loadPolicyAndDevice(
+	ctx context.Context,
+	packages []string,
+) (*policy.File, engine.Device, error) {
 	file, err := config.LoadFile(opts.file)
+	if err != nil {
+		return nil, nil, exitError(2, err)
+	}
+	file, err = selectPackages(file, packages)
 	if err != nil {
 		return nil, nil, exitError(2, err)
 	}
 	dev, err := opts.openDevice(ctx)
 	return file, dev, err
+}
+
+func selectPackages(file *policy.File, selected []string) (*policy.File, error) {
+	if len(selected) == 0 {
+		return file, nil
+	}
+	names := make(map[string]struct{}, len(selected))
+	for _, name := range selected {
+		names[name] = struct{}{}
+	}
+	sorted := make([]string, 0, len(names))
+	for name := range names {
+		sorted = append(sorted, name)
+	}
+	sort.Strings(sorted)
+	filtered := policy.File{
+		Version:  file.Version,
+		Packages: make(map[string]policy.Package, len(sorted)),
+	}
+	for _, name := range sorted {
+		pkg, ok := file.Packages[name]
+		if !ok {
+			return nil, fmt.Errorf("package %q is not present in the policy", name)
+		}
+		filtered.Packages[name] = pkg
+	}
+	return &filtered, nil
+}
+
+func (opts *options) reportPlanStart(packages int) {
+	_, _ = fmt.Fprintf(opts.stderr, "Inspecting %d package(s)...\n", packages)
+}
+
+func (opts *options) progress() engine.ProgressFunc {
+	if !opts.verbose {
+		return nil
+	}
+	return func(completed, total int, packageName string) {
+		_, _ = fmt.Fprintf(opts.stderr, "Inspected %d/%d %s\n", completed, total, packageName)
+	}
 }
 
 func (opts *options) openDevice(ctx context.Context) (engine.Device, error) {
